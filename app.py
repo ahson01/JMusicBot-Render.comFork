@@ -29,7 +29,7 @@ def start_bot():
     if not isinstance(extra_args, list):
         return jsonify({"error": "args must be a list"}), 400
 
-    cmd = ["java", "-Dconfig=/etc/secrets/config.txt", "-jar", str(JAR), *extra_args]
+    cmd = ["java", '-Dconfig="/etc/secrets/config.txt"', "-jar", str(JAR), *extra_args]
 
     # Important: cwd=JMB_DIR so relative paths go next to the jar
     proc = subprocess.Popen(
