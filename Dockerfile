@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Install a modern JRE (Debian trixie ships OpenJDK 21)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    openjdk-21-jre-headless ca-certificates \
+    openjdk-21-jre ca-certificates fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/render/project/src
