@@ -11,7 +11,7 @@ app = Flask(__name__)
 # Paths
 BASE = Path(__file__).resolve().parent
 JMB_DIR = BASE / "jmb"
-JAR = JMB_DIR / "JMusicBot.jar"
+JAR = JMB_DIR / "JMusicBot1.jar"
 CONFIG_ABS = Path("/etc/secrets/config.txt")   # your secret config path
 
 def start_bot_once():
