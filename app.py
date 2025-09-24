@@ -1,56 +1,61 @@
-from flask import Flask, jsonify, request
+from flask import Flask
 from pathlib import Path
-import subprocess, shlex
+import jpype
+import jpype.imports
+import threading
+import sys
+import os
 
 app = Flask(__name__)
 
+# Paths
 BASE = Path(__file__).resolve().parent
 JMB_DIR = BASE / "jmb"
 JAR = JMB_DIR / "JMusicBot.jar"
-CONFIG = JMB_DIR / "config.txt"
+CONFIG_ABS = Path("/etc/secrets/config.txt")   # absolute config path from Render secret file
+
+def start_bot_once():
+    """Start the JVM and JMusicBot if not already running."""
+    if not JAR.exists():
+        raise FileNotFoundError(f"Missing bot JAR: {JAR}")
+    if not CONFIG_ABS.exists():
+        raise FileNotFoundError(f"Missing config file: {CONFIG_ABS}")
+
+    # Switch cwd so any files JMusicBot writes end up in ./jmb
+    os.chdir(JMB_DIR)
+
+    if not jpype.isJVMStarted():
+        # JVM args: enable assertions, point to config, set classpath
+        jvm_args = [
+            "-ea",
+            f"-Dconfig={str(CONFIG_ABS)}",
+            f"-Djava.class.path={JAR.resolve()}",
+        ]
+        jpype.startJVM(*jvm_args)
+
+    # Import main class from the JAR
+    JMusicBot = jpype.JClass("com.jagrosh.jmusicbot.JMusicBot")
+
+    def run_main():
+        try:
+            # Launch the bot (equivalent to: java -Dconfig=/etc/secrets/config.txt -jar JMusicBot.jar)
+            JMusicBot.main([])  # add flags here if needed, e.g. ["--nogui"]
+        except Exception as e:
+            print(f"[JMusicBot ERROR] {e}", file=sys.stderr)
+
+    # Start bot in a daemon thread so the container can shut down cleanly
+    threading.Thread(target=run_main, name="JMusicBotMain", daemon=True).start()
+
+# Start the bot at import time (so it runs as soon as Gunicorn loads the app)
+try:
+    start_bot_once()
+except Exception as e:
+    print(f"[BOOT ERROR] {e}", file=sys.stderr)
 
 @app.get("/healthz")
 def healthz():
     return "ok", 200
 
-@app.post("/start-bot")
-def start_bot():
-    """
-    Starts JMusicBot, using the config in ./jmb/config.txt.
-    Runs with cwd=JMB_DIR so any files the bot writes end up in ./jmb.
-    """
-    if not JAR.exists():
-        return jsonify({"error": f"Missing {JAR}"}), 500
-    if not CONFIG.exists():
-        return jsonify({"error": f"Missing {CONFIG}"}), 500
-
-    # You can pass additional JVM or bot args via JSON if you want:
-    extra_args = request.json.get("args", []) if request.is_json else []
-    if not isinstance(extra_args, list):
-        return jsonify({"error": "args must be a list"}), 400
-
-    cmd = ["java", '-Dconfig="/etc/secrets/config.txt"', "-jar", str(JAR), *extra_args]
-
-    # Important: cwd=JMB_DIR so relative paths go next to the jar
-    proc = subprocess.Popen(
-        cmd,
-        cwd=str(JMB_DIR),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
-    )
-    # Don't block; just acknowledge it started
-    return jsonify({"pid": proc.pid, "cmd": " ".join(map(shlex.quote, cmd))}), 202
-
-@app.post("/stop-bot")
-def stop_bot():
-    # Super minimal example: find java process for the JAR and kill it.
-    # In production, track the Popen handle or use a supervisor.
-    try:
-        subprocess.run(
-            ["bash", "-lc", "pkill -f JMusicBot.jar || true"],
-            check=False
-        )
-        return jsonify({"stopped": True})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+@app.get("/")
+def root():
+    return "JMusicBot via JPype is running. Check logs for details.", 200
